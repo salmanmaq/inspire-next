@@ -46,8 +46,13 @@ from inspirehep.modules.disambiguation.core.ml.models import (
 
 ETHNICITY_TRAINING_DATA = '''\
 RACE,NAMELAST,NAMEFRST
-1,EASTWOOD,CLINT
-5,MIFUNE,TOSHIRO
+1,BAR,FOO
+2,BAR,FOO
+3,BAR,FOO
+4,BAR,FOO
+5,BAR,FOO
+6,BAR,FOO
+7,BAR,FOO
 '''
 
 
