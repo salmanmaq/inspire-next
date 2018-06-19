@@ -24,12 +24,14 @@ from __future__ import absolute_import, division, print_function
 
 import json
 from mock import patch
+import os
 
 from flask import current_app
 
 from factories.db.invenio_records import TestRecordMetadata
 
 from inspirehep.modules.disambiguation.api import (
+    run_clusterer_model,
     save_curated_signatures_and_input_clusters,
     save_publications,
     save_sampled_pairs,
@@ -37,11 +39,12 @@ from inspirehep.modules.disambiguation.api import (
     train_and_save_ethnicity_model,
 )
 from inspirehep.modules.disambiguation.core.ml.models import (
+    ClustererModel,
     DistanceEstimator,
     EthnicityEstimator,
 )
 
-ETHNICITY_DATA = '''\
+ETHNICITY_TRAINING_DATA = '''\
 RACE,NAMELAST,NAMEFRST
 1,EASTWOOD,CLINT
 5,MIFUNE,TOSHIRO
@@ -63,7 +66,7 @@ def test_save_curated_signatures_and_input_clusters(isolated_app, tmpdir):
         save_curated_signatures_and_input_clusters()
 
     input_clusters = [json.loads(line) for line in input_clusters_fd.readlines()]
-    reversed_input_clusters = {
+    input_clusters_by_id = {
         input_cluster['cluster_id']: {
             'author_id': input_cluster['author_id'],
             'signature_uuids': input_cluster['signature_uuids'],
@@ -73,7 +76,7 @@ def test_save_curated_signatures_and_input_clusters(isolated_app, tmpdir):
     assert {
         'author_id': 1010819,
         'signature_uuids': ['94f560d2-6791-43ec-a379-d3dc4ad0ceb7'],
-    } in reversed_input_clusters.values()
+    } in input_clusters_by_id.values()
 
     curated_signatures = [json.loads(line) for line in curated_signatures_fd.readlines()]
 
@@ -99,7 +102,7 @@ def test_save_sampled_signature_pairs(isolated_app, tmpdir):
         'DISAMBIGUATION_CURATED_SIGNATURES_PATH': str(curated_signatures_fd),
         'DISAMBIGUATION_INPUT_CLUSTERS_PATH': str(input_clusters_fd),
         'DISAMBIGUATION_SAMPLED_PAIRS_PATH': str(sampled_pairs_fd),
-        'DISAMBIGUATION_SAMPLED_PAIRS_SIZE': 1000,
+        'DISAMBIGUATION_SAMPLED_PAIRS_SIZE': 12 * 100,
     }
 
     with patch.dict(current_app.config, config):
@@ -161,7 +164,7 @@ def test_save_publications(isolated_app, tmpdir):
 
 def test_train_and_save_ethnicity_model(isolated_app, tmpdir):
     ethnicity_data_fd = tmpdir.join('ethnicity.csv')
-    ethnicity_data_fd.write(ETHNICITY_DATA)
+    ethnicity_data_fd.write(ETHNICITY_TRAINING_DATA)
     ethnicity_model_fd = tmpdir.join('ethnicity.pkl')
 
     config = {
@@ -185,14 +188,14 @@ def test_train_and_save_distance_model(isolated_app, tmpdir):
     sampled_pairs_fd = tmpdir.join('sampled_pairs.jsonl')
     publications_fd = tmpdir.join('publications.jsonl')
     ethnicity_data_fd = tmpdir.join('ethnicity.csv')
-    ethnicity_data_fd.write(ETHNICITY_DATA)
+    ethnicity_data_fd.write(ETHNICITY_TRAINING_DATA)
     ethnicity_model_fd = tmpdir.join('ethnicity.pkl')
     distance_model_fd = tmpdir.join('distance.pkl')
 
     config = {
         'DISAMBIGUATION_CURATED_SIGNATURES_PATH': str(curated_signatures_fd),
         'DISAMBIGUATION_SAMPLED_PAIRS_PATH': str(sampled_pairs_fd),
-        'DISAMBIGUATION_SAMPLED_PAIRS_SIZE': 1000,
+        'DISAMBIGUATION_SAMPLED_PAIRS_SIZE': 12 * 100,
         'DISAMBIGUATION_PUBLICATIONS_PATH': str(publications_fd),
         'DISAMBIGUATION_ETHNICITY_DATA_PATH': str(ethnicity_data_fd),
         'DISAMBIGUATION_ETHNICITY_MODEL_PATH': str(ethnicity_model_fd),
@@ -208,5 +211,50 @@ def test_train_and_save_distance_model(isolated_app, tmpdir):
 
     ethnicity_estimator = EthnicityEstimator()
     ethnicity_estimator.load_model(str(ethnicity_model_fd))
-    distance_estimator = DistanceEstimator(str(ethnicity_model_fd))
+
+    distance_estimator = DistanceEstimator(ethnicity_estimator)
     distance_estimator.load_model(str(distance_model_fd))
+
+
+def test_run_clusterer_model(isolated_app, tmpdir):
+    TestRecordMetadata.create_from_file(__name__, '765515.json')
+    TestRecordMetadata.create_from_file(__name__, '765975.json')
+
+    curated_signatures_fd = tmpdir.join('curated_signatures.jsonl')
+    input_clusters_fd = tmpdir.join('input_clusters.jsonl')
+    sampled_pairs_fd = tmpdir.join('sampled_pairs.jsonl')
+    publications_fd = tmpdir.join('publications.jsonl')
+    ethnicity_data_fd = tmpdir.join('ethnicity.csv')
+    ethnicity_data_fd.write(ETHNICITY_TRAINING_DATA)
+    ethnicity_model_fd = tmpdir.join('ethnicity.pkl')
+    distance_model_fd = tmpdir.join('distance.pkl')
+    predicted_clusters_fd = tmpdir.join('predicted_clusters.jsonl')
+
+    config = {
+        'DISAMBIGUATION_CURATED_SIGNATURES_PATH': str(curated_signatures_fd),
+        'DISAMBIGUATION_INPUT_CLUSTERS_PATH': str(input_clusters_fd),
+        'DISAMBIGUATION_SAMPLED_PAIRS_PATH': str(sampled_pairs_fd),
+        'DISAMBIGUATION_SAMPLED_PAIRS_SIZE': 1000,
+        'DISAMBIGUATION_PUBLICATIONS_PATH': str(publications_fd),
+        'DISAMBIGUATION_ETHNICITY_DATA_PATH': str(ethnicity_data_fd),
+        'DISAMBIGUATION_ETHNICITY_MODEL_PATH': str(ethnicity_model_fd),
+        'DISAMBIGUATION_DISTANCE_MODEL_PATH': str(distance_model_fd),
+        'DISAMBIGUATION_PREDICTED_CLUSTERS_PATH': str(predicted_clusters_fd),
+    }
+
+    with patch.dict(current_app.config, config):
+        save_curated_signatures_and_input_clusters()
+        save_sampled_pairs()
+        save_publications()
+        train_and_save_ethnicity_model()
+        train_and_save_distance_model()
+        run_clusterer_model()
+
+    # ethnicity_estimator = EthnicityEstimator()
+    # ethnicity_estimator.load_model(str(ethnicity_model_fd))
+    #
+    # distance_estimator = DistanceEstimator(ethnicity_estimator)
+    # distance_estimator.load_model(str(distance_model_fd))
+    #
+    # clusterer_model = ClustererModel(distance_estimator)
+    assert os.path.exists(str(predicted_clusters_fd)) is True

@@ -35,6 +35,7 @@ from inspirehep.modules.disambiguation.core.db.readers import (
     get_all_publications,
 )
 from inspirehep.modules.disambiguation.core.ml.models import (
+    ClustererModel,
     DistanceEstimator,
     EthnicityEstimator,
 )
@@ -113,12 +114,33 @@ def train_and_save_ethnicity_model():
 
 def train_and_save_distance_model():
     """Train the distance estimator model and save it to disk."""
-    estimator = DistanceEstimator(current_app.config['DISAMBIGUATION_ETHNICITY_MODEL_PATH'])
-    estimator.load_data(
+    ethnicity_estimator = EthnicityEstimator()
+    ethnicity_estimator.load_model(current_app.config['DISAMBIGUATION_ETHNICITY_MODEL_PATH'])
+
+    distance_estimator = DistanceEstimator(ethnicity_estimator)
+    distance_estimator.load_data(
         current_app.config['DISAMBIGUATION_CURATED_SIGNATURES_PATH'],
         current_app.config['DISAMBIGUATION_SAMPLED_PAIRS_PATH'],
         current_app.config['DISAMBIGUATION_SAMPLED_PAIRS_SIZE'],
         current_app.config['DISAMBIGUATION_PUBLICATIONS_PATH'],
     )
-    estimator.fit()
-    estimator.save_model(current_app.config['DISAMBIGUATION_DISTANCE_MODEL_PATH'])
+    distance_estimator.fit()
+    distance_estimator.save_model(current_app.config['DISAMBIGUATION_DISTANCE_MODEL_PATH'])
+
+
+def run_clusterer_model():
+    """Runs the clustering algorithm and saves predicted clusters to disk."""
+    ethnicity_estimator = EthnicityEstimator()
+    ethnicity_estimator.load_model(current_app.config['DISAMBIGUATION_ETHNICITY_MODEL_PATH'])
+
+    distance_estimator = DistanceEstimator(ethnicity_estimator)
+    distance_estimator.load_model(current_app.config['DISAMBIGUATION_DISTANCE_MODEL_PATH'])
+
+    clusterer_model = ClustererModel(distance_estimator)
+    clusterer_model.load_data(
+        current_app.config['DISAMBIGUATION_CURATED_SIGNATURES_PATH'],
+        current_app.config['DISAMBIGUATION_PUBLICATIONS_PATH'],
+        current_app.config['DISAMBIGUATION_INPUT_CLUSTERS_PATH']
+    )
+    clusterer_model.fit()
+    clusterer_model.save_predicted_clusters(current_app.config['DISAMBIGUATION_PREDICTED_CLUSTERS_PATH'])
