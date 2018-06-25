@@ -38,7 +38,6 @@ from sqlalchemy import (
     cast,
     type_coerce,
 )
-from timeout_decorator import timeout
 from werkzeug import secure_filename
 
 from invenio_db import db
@@ -50,6 +49,7 @@ from inspire_schemas.utils import validate
 from inspire_utils.record import get_value
 from inspire_utils.dedupers import dedupe_list
 from inspirehep.modules.records.json_ref_loader import replace_refs
+from inspirehep.modules.records.utils import get_linked_records_in_field
 from inspirehep.modules.workflows.tasks.refextract import (
     extract_references_from_pdf,
     extract_references_from_raw_refs,
@@ -62,7 +62,6 @@ from inspirehep.modules.workflows.utils import (
     get_document_in_workflow,
     get_resolve_validation_callback_url,
     get_validation_errors,
-    ignore_timeout_error,
     log_workflows_action,
     with_debug_logging,
 )
@@ -401,8 +400,6 @@ def download_documents(obj, eng):
                 'Cannot download document from %s', url)
 
 
-@ignore_timeout_error
-@timeout(10 * 60)
 @with_debug_logging
 def refextract(obj, eng):
     """Extract references from various sources and add them to the workflow.
@@ -446,6 +443,19 @@ def refextract(obj, eng):
     elif len(matched_text_references) >= len(matched_pdf_references):
         obj.log.info('Extracted %d references from text.', len(matched_text_references))
         obj.data['references'] = matched_text_references
+
+
+@with_debug_logging
+def count_reference_coreness(obj, eng):
+    """Count number of core/non-core matched references."""
+    cited_records = list(get_linked_records_in_field(obj.data, 'references.record'))
+    count_core = len([rec for rec in cited_records if rec.get('core') is True])
+    count_non_core = len(cited_records) - count_core
+
+    obj.extra_data['reference_count'] = {
+        'core': count_core,
+        'non_core': count_non_core,
+    }
 
 
 @with_debug_logging
@@ -597,3 +607,11 @@ def set_refereed_and_fix_document_type(obj, eng):
             obj.data['document_type'].append('conference paper')
         except ValueError:
             pass
+
+
+@with_debug_logging
+def jlab_ticket_needed(obj, eng):
+    """Check if the a JLab curation ticket is needed."""
+    jlab_categories = set(current_app.config['JLAB_ARXIV_CATEGORIES'])
+    arxiv_categories = set(get_arxiv_categories(obj.data))
+    return bool(jlab_categories & arxiv_categories)

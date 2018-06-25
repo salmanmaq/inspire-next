@@ -40,6 +40,7 @@ from inspirehep.modules.workflows.tasks.arxiv import (
 )
 from inspirehep.modules.workflows.tasks.actions import (
     add_core,
+    count_reference_coreness,
     download_documents,
     error_workflow,
     fix_submission_number,
@@ -60,6 +61,7 @@ from inspirehep.modules.workflows.tasks.actions import (
     save_workflow,
     set_refereed_and_fix_document_type,
     validate_record,
+    jlab_ticket_needed,
 )
 
 from inspirehep.modules.workflows.tasks.classifier import (
@@ -102,7 +104,7 @@ from inspirehep.modules.workflows.tasks.submission import (
     filter_keywords,
     prepare_keywords,
     reply_ticket,
-    send_robotupload,
+    send_to_legacy,
     wait_webcoll,
 )
 
@@ -161,6 +163,7 @@ ENHANCE_RECORD = [
     download_documents,
     normalize_journal_titles,
     refextract,
+    count_reference_coreness,
     extract_journal_info,
     populate_journal_coverage,
     classify_paper(
@@ -214,18 +217,29 @@ NOTIFY_ACCEPTED = [
 ]
 
 
-NOTIFY_CURATOR_IF_CORE = [
+NOTIFY_CURATOR_IF_NEEDED = [
     IF_NOT(
         is_marked('is-update'),
-        IF(
-            curation_ticket_needed,
-            create_ticket(
-                template='literaturesuggest/tickets/curation_core.html',
-                queue='HEP_curation',
-                context_factory=curation_ticket_context,
-                ticket_id_key='curation_ticket_id',
-            ),
-        ),
+        [
+            IF_ELSE(
+                jlab_ticket_needed,
+                create_ticket(
+                    template='literaturesuggest/tickets/curation_jlab.html',
+                    queue='HEP_curation_jlab',
+                    context_factory=curation_ticket_context,
+                    ticket_id_key='curation_ticket_id',
+                ),
+                IF(
+                    curation_ticket_needed,
+                    create_ticket(
+                        template='literaturesuggest/tickets/curation_core.html',
+                        queue='HEP_curation',
+                        context_factory=curation_ticket_context,
+                        ticket_id_key='curation_ticket_id',
+                    ),
+                ),
+            )
+        ]
     ),
 ]
 
@@ -240,7 +254,7 @@ POSTENHANCE_RECORD = [
 
 
 SEND_TO_LEGACY = [
-    send_robotupload(mode='replace'),
+    send_to_legacy,
 ]
 
 
@@ -491,7 +505,7 @@ class Article(object):
                     SEND_TO_LEGACY +
                     WAIT_FOR_LEGACY_WEBCOLL +
                     NOTIFY_ACCEPTED +
-                    NOTIFY_CURATOR_IF_CORE
+                    NOTIFY_CURATOR_IF_NEEDED
                 ),
                 NOTIFY_NOT_ACCEPTED,
             ),

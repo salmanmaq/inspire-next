@@ -4,11 +4,16 @@
             "_all": {
                 "enabled": true
             },
+            "dynamic": false,
             "date_detection": false,
             "numeric_detection": false,
             "properties": {
                 "_extra_data": {
                     "properties": {
+                        "_action": {
+                            "index": "not_analyzed",
+                            "type": "string"
+                        },
                         "is-update": {
                             "type": "boolean"
                         },

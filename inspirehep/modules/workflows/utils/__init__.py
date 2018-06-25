@@ -158,23 +158,25 @@ def with_debug_logging(func):
     return _decorator
 
 
-def ignore_timeout_error(func):
-    """Ignore the TimeoutError.
+def ignore_timeout_error(return_value=None):
+    """Ignore the TimeoutError, returning return_value when it happens.
 
     Quick fix for ``refextract`` and ``plotextract`` tasks only. It
     shouldn't be used for others!
     """
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except TimeoutError:
-            LOGGER.error(
-                'Timeout error while extracting raised from: %s.',
-                func.__name__
-            )
-    return wrapper
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except TimeoutError:
+                LOGGER.error(
+                    'Timeout error while extracting raised from: %s.',
+                    func.__name__
+                )
+                return return_value
+        return wrapper
+    return decorator
 
 
 @contextmanager
@@ -340,7 +342,7 @@ def get_resolve_validation_callback_url():
         route.
     """
     return url_for(
-        'inspire_workflows.callback_resolve_validation',
+        'inspire_workflows_callbacks.callback_resolve_validation',
         _external=True
     )
 
@@ -355,7 +357,20 @@ def get_resolve_merge_conflicts_callback_url():
         route.
     """
     return url_for(
-        'inspire_workflows.callback_resolve_merge_conflicts',
+        'inspire_workflows_callbacks.callback_resolve_merge_conflicts',
+        _external=True
+    )
+
+
+def get_resolve_edit_article_callback_url():
+    """Resolve edit_article workflow letting it continue.
+
+    Note:
+        It's using ``inspire_workflows.callback_resolve_edit_article``
+        route.
+    """
+    return url_for(
+        'inspire_workflows_callbacks.callback_resolve_edit_article',
         _external=True
     )
 
